@@ -1,0 +1,778 @@
+type project.m;
+
+% CS 525 final project
+% Jieru Hu
+% ID:9070194544
+% Semester: 2016 Spring
+% files: project.m, seperation.m, misstest.m
+
+% extract the data
+clear;
+[train,tune,test] = getdata('wdbc.data',30);
+
+% Part 1
+[omega_a,gamma_a,minValue_a] = seperation( train,0.0001 );
+fprintf('In part 1, the calculated omega is:\n');
+omega_a
+fprintf('In part 1, the calculated gamma is:\n');
+gamma_a
+fprintf('In part 1, the minimum value of the QP is:\n');
+minValue_a
+
+% Part 2
+miss_part2 = misstest(omega_a, gamma_a, tune);
+fprintf('In part 2, the number of misclassified points on the tuning set when using mu as 0.0001 is %d.\n\n',miss_part2);
+
+% set up the mu variables
+mu_list = zeros(1,10);
+for i = 1:10
+	mu_list(i) = 0.00005*i;
+end
+
+fprintf('Then we try different mu values: \n');
+% test each mu
+besterror = 0;
+bestmu = 0;
+bestmiss = inf;
+besterror = inf;
+for i = 1:10
+    mu = mu_list(i);
+    [omega, gamma, minValue] = seperation(train,mu);
+    [miss,error] = misstest(omega,gamma,tune);
+    wsquare = omega'*omega;
+    fprintf('The number of misclassified points using %.5f as mu is %d. \n',mu,miss);
+    fprintf('The miss error from the missed points is %f, and the seperating plane margin(1/w^2) is %f.\n\n',error,1/wsquare);
+    %calculate the best mu
+    if miss < bestmiss
+        bestmu = mu;
+        bestmiss = miss;
+    end
+    if miss == bestmiss
+        if error < besterror
+            bestmu = mu;
+            besterror = error;
+        end
+    end
+end
+
+% Evaluate the missclassified points and sum of errors on the testing
+% data
+[omega_b,gamma_b,minValue_b] = seperation(train,bestmu);
+[totalmiss_b, error_b] = misstest(omega_b,gamma_b,test);
+fprintf('The mu value produces the minimum value is %.5f.\n', bestmu);
+fprintf('The misclassified points on test data produced by the best mu is %.5f.\n',totalmiss_b);
+fprintf('The sum of errors produced on test data by the best mu is %.5f.\n\n',error_b);
+
+
+% Overall, the mu represents a weight factor between maximum (Euclidean)
+% margin of the seperating plane and missing error of malignant and benign
+% points. As we try mu from 5e-5 to 5e-4, the missed points for using 5e-5
+% and 1e-4 are 3 and the remainings are 2. The increase on mu from 5e-5 to 5e-4, 
+% results in a seperating plane with larger margin. It means that the
+% seperating plane is placed at a proper angle with respect to the train
+% data. Therefore, the plane is likely to seperate the tune data more
+% effectively. The test shows that larger mu leads to less missed points on the tune data. 
+% I calculate the error for benign points as "data(i,2:setsize)*omega-gamma+1" and the 
+% error for the malignant points as "gamma - data(i,2:setsize)*omega+1", which is suggested by the QP problem formulation.
+% When we use 5e-4 for the mu, we have the lowest error on missed errors which is equal to 6.2465 and the
+% largest margin for the seperating hyperplane, which is equal to 0.01233. This is the best condition
+% we desired, where comparatively larger weight factor is placed on the maximum (Euclidean)
+% margin of the seperating plane in this minimization problem. 
+% Therefore, 5e-4 is the best mu for this problem. 
+
+
+% Part 3
+besti = 0;
+bestj = 0;
+bestmiss = inf;
+besterror = inf;
+for i = 2:31
+    for j = i+1:31
+        % extract the corresponding attributes
+        train_c = train(:,[1 i j]);
+        tune_c = tune(:,[1 i j]);
+        
+        % for each pair, determine the a seperating plane
+        [omega_c,gamma_c,minValue_c] = seperation(train_c,bestmu);
+        % using tuning set with corresponding pair to determine number of
+        % misclassified points
+        [miss_c,misserror_c] = misstest(omega_c,gamma_c,tune_c);
+        fprintf('atts %2d %2d: misclass %3d\n',i-1,j-1, miss_c);
+        if miss_c < bestmiss
+            besti = i;
+            bestj = j;
+            bestmiss = miss_c;
+        end
+        if miss_c == bestmiss
+            besti = i;
+            bestj = j;
+            misserror = misserror_c;
+        end   
+    end
+end
+
+
+% Part 4
+% From part 3, we get the besti and bestj for the best pair of attributes.
+fprintf('The best atts is %2d %2d, which has a misclass of %d.\n',besti-1,bestj-1, bestmiss);
+% extract the best data
+train_d = train(:,[1, besti, bestj]);
+test_d = test(:,[1,besti,bestj]);
+[omega_d, gamma_d, min_d] = seperation(train_d,bestmu); 
+xcoorb = test_d(test_d(:,1) == 66, 2);
+xcoorm = test_d(test_d(:,1) == 77, 2);
+% get y coordinates
+ycoorb = test_d(test_d(:,1) == 66, 3);
+ycoorm = test_d(test_d(:,1) == 77, 3);
+
+% plot
+figure;
+x = linspace(-100,100);
+y = (-omega_d(1)*x+gamma_d)/omega_d(2);
+
+% perturb the points
+% We add a random number between -0.01 and 0.01 to x and y coordinate
+% of the plotted point respectively.
+scale = 0.01;
+
+xcoorb = xcoorb + scale*(-1 + 2*rand(size(xcoorb,1),1));
+ycoorb = ycoorb + scale*(-1 + 2*rand(size(ycoorb,1),1));
+xcoorm = xcoorm + scale*(-1 + 2*rand(size(xcoorm,1),1));
+ycoorm = ycoorm + scale*(-1 + 2*rand(size(ycoorm,1),1));
+
+plot(xcoorb,ycoorb,'o',xcoorm,ycoorm,'+',x,y,'r');
+legend('benign points','malignant points','the seperating line');
+title('Plot on seperation of benign and malignant poinweightts for brest cancer diagnosis');
+axis([-3 4 -4 4]);
+
+% check the solution
+check = misstest(omega_d,gamma_d,test_d);
+fprintf('The test function shows that the miss points for the test cases are %d, which exactly agrees with the plot.\n',check);
+
+type seperation.m;
+
+% CS 525 final project
+% Jieru Hu
+% ID:9070194544
+% Semester: 2016 Spring
+% files: project.m, seperation.m, misstest.m
+
+function [ omega,gamma,minValue ] = seperation( train, mu )
+% The function takes mu as an input, extracts data from the dataset and
+% formulate the quadratic programming problem. Then cplexqp() function is
+% called to solve the quadratic problem. omega, gamma and the minimum value
+% of the LP problem is returned.
+
+% seperate the train data set
+totalsize = size(train,1);
+Bset = train(train(:,1) == 66, 2:end);
+Mset = train(train(:,1) == 77, 2:end);
+
+% get size
+setsize = size(Mset,2);
+Msize = size(Mset,1);
+Bsize = size(Bset,1);
+
+%set up the parameters of cplexqp method
+H = mu*[eye(setsize);zeros(totalsize+1,setsize)];
+H = [H zeros(setsize+totalsize+1,totalsize+1)];
+f = 1/Msize*[zeros(1,setsize+1) ones(1,Msize) zeros(1,Bsize)]+1/Bsize*[zeros(1,setsize+1+Msize) ones(1,Bsize)];
+Aineq = [Mset -ones(Msize,1) eye(Msize) zeros(Msize,Bsize);-Bset ones(Bsize,1) zeros(Bsize,Msize) eye(Bsize)];
+bineq = ones(totalsize,1);
+Aineq = -Aineq;
+bineq = -bineq;
+ub = inf*ones(setsize+1+totalsize,1);
+lb = [-inf(setsize+1,1);zeros(totalsize,1)];
+Aeq = [];
+beq = [];
+
+% quadratic function
+% H: the coefficient for quadratic term in the function 
+% f: the coeeficcient for the linear term in the funcition
+% Aineq: martrix on the lhs of the inequality
+% bineq: matrix on the rhs of the inequality
+% Aeq: matrix on the lhs of the equality
+% beq: matrix on the rhs of the equality
+% lb: lower bound of the variable
+% ub: upper bound of the varaible
+
+[x,fval,exitflag,output,lambda] = cplexqp(H,f,Aineq,bineq,Aeq,beq,lb,ub);
+
+
+omega = x(1:setsize);
+gamma = x(setsize+1);
+minValue = fval; 
+
+
+end
+
+type misstest.m
+
+% CS 525 final project
+% Jieru Hu
+% ID:9070194544
+% Semester: 2016 Spring
+% files: project.m, seperation.m, misstest.m
+
+function [ totalmiss,error ] = misstest( omega, gamma, data )
+%The function receive coefficeint of omega and gamma and test on the tune
+%data test. At last, it return the number of misclassified point.
+
+lines = size(data,1);
+setsize = size(data,2);
+totalmiss = 0;
+error = 0;
+
+for i = 1:lines
+    %if the tuning set is B set
+    if (data(i,1) == 66)
+        % check if it is misclassified points
+        if (data(i,2:setsize)*omega-gamma >= 0)
+            totalmiss = totalmiss+1;
+           
+        end
+        if (data(i,2:setsize)*omega-gamma >= -1)
+            
+            error = error + (data(i,2:setsize)*omega-gamma+1);
+        end
+    end
+    
+    %if the tuning set is M set
+    if (data(i,1) ==77)
+        % check if it is misclassified points
+        if (data(i,2:setsize)*omega-gamma <= 0)
+            totalmiss = totalmiss + 1;
+        end
+        if (data(i,2:setsize)*omega-gamma <= 1)
+      
+            error = error + (gamma - data(i,2:setsize)*omega+1);
+        end
+    end
+end
+
+end
+
+project
+In part 1, the calculated omega is:
+
+omega_a =
+
+   -4.1056
+   -0.1242
+   -3.3016
+   -1.6735
+    2.4501
+   -4.8508
+   -0.3210
+    3.7928
+   -1.2820
+    0.2479
+    4.1126
+   -0.8100
+   -0.3688
+    3.8027
+    0.5084
+   -0.0471
+   -0.1307
+    4.2478
+    0.7133
+   -7.1841
+    6.5976
+    5.0381
+    4.1452
+    8.0556
+   -1.6099
+    0.1599
+   -0.3038
+    0.6853
+    0.6642
+    6.4163
+
+In part 1, the calculated gamma is:
+
+gamma_a =
+
+   -3.5688
+
+In part 1, the minimum value of the QP is:
+
+minValue_a =
+
+    0.0459
+
+In part 2, the number of misclassified points on the tuning set when using mu as 0.0001 is 3.
+
+Then we try different mu values: 
+The number of misclassified points using 0.00005 as mu is 3. 
+The miss error from the missed points is 24.879949, and the seperating plane margin(1/w^2) is 0.001603.
+
+The number of misclassified points using 0.00010 as mu is 3. 
+The miss error from the missed points is 15.635259, and the seperating plane margin(1/w^2) is 0.002669.
+
+The number of misclassified points using 0.00015 as mu is 2. 
+The miss error from the missed points is 13.261278, and the seperating plane margin(1/w^2) is 0.003741.
+
+The number of misclassified points using 0.00020 as mu is 2. 
+The miss error from the missed points is 10.484226, and the seperating plane margin(1/w^2) is 0.005454.
+
+The number of misclassified points using 0.00025 as mu is 2. 
+The miss error from the missed points is 9.129542, and the seperating plane margin(1/w^2) is 0.006588.
+
+The number of misclassified points using 0.00030 as mu is 2. 
+The miss error from the missed points is 8.844106, and the seperating plane margin(1/w^2) is 0.007223.
+
+The number of misclassified points using 0.00035 as mu is 2. 
+The miss error from the missed points is 8.623636, and the seperating plane margin(1/w^2) is 0.007905.
+
+The number of misclassified points using 0.00040 as mu is 2. 
+The miss error from the missed points is 7.651008, and the seperating plane margin(1/w^2) is 0.009393.
+
+The number of misclassified points using 0.00045 as mu is 2. 
+The miss error from the missed points is 6.697648, and the seperating plane margin(1/w^2) is 0.011040.
+
+The number of misclassified points using 0.00050 as mu is 2. 
+The miss error from the missed points is 6.246519, and the seperating plane margin(1/w^2) is 0.012338.
+
+The mu value produces the minimum value is 0.00050.
+The misclassified points on test data produced by the best mu is 0.00000.
+The sum of errors produced on test data by the best mu is 3.81774.
+
+atts  1  2: misclass  14
+atts  1  3: misclass  11
+atts  1  4: misclass  12
+atts  1  5: misclass  10
+atts  1  6: misclass   8
+atts  1  7: misclass   8
+atts  1  8: misclass   8
+atts  1  9: misclass   9
+atts  1 10: misclass  11
+atts  1 11: misclass   9
+atts  1 12: misclass  14
+atts  1 13: misclass   8
+atts  1 14: misclass   8
+atts  1 15: misclass  12
+atts  1 16: misclass  11
+atts  1 17: misclass  12
+atts  1 18: misclass  11
+atts  1 19: misclass  12
+atts  1 20: misclass  12
+atts  1 21: misclass   5
+atts  1 22: misclass  13
+atts  1 23: misclass   8
+atts  1 24: misclass   6
+atts  1 25: misclass   5
+atts  1 26: misclass  12
+atts  1 27: misclass  11
+atts  1 28: misclass   8
+atts  1 29: misclass   9
+atts  1 30: misclass   9
+atts  2  3: misclass  13
+atts  2  4: misclass  13
+atts  2  5: misclass  22
+atts  2  6: misclass  25
+atts  2  7: misclass  18
+atts  2  8: misclass   7
+atts  2  9: misclass  28
+atts  2 10: misclass  32
+atts  2 11: misclass  20
+atts  2 12: misclass  30
+atts  2 13: misclass  23
+atts  2 14: misclass  14
+atts  2 15: misclass  31
+atts  2 16: misclass  26
+atts  2 17: misclass  28
+atts  2 18: misclass  27
+atts  2 19: misclass  32
+atts  2 20: misclass  32
+atts  2 21: misclass  11
+atts  2 22: misclass  32
+atts  2 23: misclass  10
+atts  2 24: misclass  11
+atts  2 25: misclass  18
+atts  2 26: misclass  26
+atts  2 27: misclass  19
+atts  2 28: misclass  12
+atts  2 29: misclass  27
+atts  2 30: misclass  27
+atts  3  4: misclass  10
+atts  3  5: misclass   9
+atts  3  6: misclass   9
+atts  3  7: misclass  10
+atts  3  8: misclass   9
+atts  3  9: misclass   9
+atts  3 10: misclass  10
+atts  3 11: misclass  11
+atts  3 12: misclass  13
+atts  3 13: misclass  10
+atts  3 14: misclass   6
+atts  3 15: misclass  10
+atts  3 16: misclass  12
+atts  3 17: misclass  11
+atts  3 18: misclass  11
+atts  3 19: misclass  11
+atts  3 20: misclass  11
+atts  3 21: misclass   9
+atts  3 22: misclass  12
+atts  3 23: misclass   7
+atts  3 24: misclass   7
+atts  3 25: misclass   5
+atts  3 26: misclass  11
+atts  3 27: misclass  11
+atts  3 28: misclass   8
+atts  3 29: misclass   9
+atts  3 30: misclass   9
+atts  4  5: misclass   9
+atts  4  6: misclass   7
+atts  4  7: misclass   7
+atts  4  8: misclass   8
+atts  4  9: misclass   9
+atts  4 10: misclass  10
+atts  4 11: misclass   8
+atts  4 12: misclass  14
+atts  4 13: misclass   7
+atts  4 14: misclass   7
+atts  4 15: misclass  13
+atts  4 16: misclass  11
+atts  4 17: misclass  12
+atts  4 18: misclass  11
+atts  4 19: misclass  12
+atts  4 20: misclass  12
+atts  4 21: misclass   8
+atts  4 22: misclass  13
+atts  4 23: misclass   8
+atts  4 24: misclass   6
+atts  4 25: misclass   5
+atts  4 26: misclass  11
+atts  4 27: misclass  11
+atts  4 28: misclass   8
+atts  4 29: misclass   9
+atts  4 30: misclass   9
+atts  5  6: misclass  18
+atts  5  7: misclass  12
+atts  5  8: misclass   8
+atts  5  9: misclass  29
+atts  5 10: misclass  23
+atts  5 11: misclass  13
+atts  5 12: misclass  25
+atts  5 13: misclass  13
+atts  5 14: misclass   7
+atts  5 15: misclass  24
+atts  5 16: misclass  28
+atts  5 17: misclass  22
+atts  5 18: misclass  18
+atts  5 19: misclass  27
+atts  5 20: misclass  27
+atts  5 21: misclass   6
+atts  5 22: misclass  23
+atts  5 23: misclass   8
+atts  5 24: misclass   6
+atts  5 25: misclass  28
+atts  5 26: misclass  24
+atts  5 27: misclass  18
+atts  5 28: misclass   9
+atts  5 29: misclass  27
+atts  5 30: misclass  26
+atts  6  7: misclass  10
+atts  6  8: misclass   8
+atts  6  9: misclass  17
+atts  6 10: misclass  14
+atts  6 11: misclass   8
+atts  6 12: misclass  17
+atts  6 13: misclass  12
+atts  6 14: misclass   5
+atts  6 15: misclass  19
+atts  6 16: misclass  15
+atts  6 17: misclass  13
+atts  6 18: misclass  19
+atts  6 19: misclass  16
+atts  6 20: misclass  15
+atts  6 21: misclass   8
+atts  6 22: misclass  24
+atts  6 23: misclass   7
+atts  6 24: misclass   8
+atts  6 25: misclass  14
+atts  6 26: misclass  19
+atts  6 27: misclass  19
+atts  6 28: misclass   9
+atts  6 29: misclass  17
+atts  6 30: misclass  14
+atts  7  8: misclass   8
+atts  7  9: misclass  12
+atts  7 10: misclass   9
+atts  7 11: misclass   6
+atts  7 12: misclass  12
+atts  7 13: misclass   7
+atts  7 14: misclass   5
+atts  7 15: misclass  12
+atts  7 16: misclass   9
+atts  7 17: misclass   9
+atts  7 18: misclass   8
+atts  7 19: misclass  10
+atts  7 20: misclass   9
+atts  7 21: misclass   7
+atts  7 22: misclass  19
+atts  7 23: misclass   8
+atts  7 24: misclass   7
+atts  7 25: misclass  11
+atts  7 26: misclass  13
+atts  7 27: misclass  12
+atts  7 28: misclass  10
+atts  7 29: misclass   9
+atts  7 30: misclass  10
+atts  8  9: misclass   8
+atts  8 10: misclass   8
+atts  8 11: misclass   7
+atts  8 12: misclass   8
+atts  8 13: misclass   7
+atts  8 14: misclass   3
+atts  8 15: misclass  10
+atts  8 16: misclass   7
+atts  8 17: misclass   8
+atts  8 18: misclass   8
+atts  8 19: misclass   9
+atts  8 20: misclass   9
+atts  8 21: misclass   6
+atts  8 22: misclass   8
+atts  8 23: misclass   8
+atts  8 24: misclass   6
+atts  8 25: misclass   7
+atts  8 26: misclass   8
+atts  8 27: misclass   8
+atts  8 28: misclass   8
+atts  8 29: misclass   7
+atts  8 30: misclass   8
+atts  9 10: misclass  35
+atts  9 11: misclass  12
+atts  9 12: misclass  39
+atts  9 13: misclass  14
+atts  9 14: misclass   7
+atts  9 15: misclass  39
+atts  9 16: misclass  35
+atts  9 17: misclass  35
+atts  9 18: misclass  27
+atts  9 19: misclass  41
+atts  9 20: misclass  35
+atts  9 21: misclass   7
+atts  9 22: misclass  28
+atts  9 23: misclass   8
+atts  9 24: misclass   8
+atts  9 25: misclass  24
+atts  9 26: misclass  21
+atts  9 27: misclass  18
+atts  9 28: misclass   9
+atts  9 29: misclass  33
+atts  9 30: misclass  28
+atts 10 11: misclass  12
+atts 10 12: misclass  75
+atts 10 13: misclass   9
+atts 10 14: misclass   7
+atts 10 15: misclass  69
+atts 10 16: misclass  27
+atts 10 17: misclass  28
+atts 10 18: misclass  23
+atts 10 19: misclass  70
+atts 10 20: misclass  31
+atts 10 21: misclass   7
+atts 10 22: misclass  33
+atts 10 23: misclass   8
+atts 10 24: misclass   6
+atts 10 25: misclass  25
+atts 10 26: misclass  18
+atts 10 27: misclass  16
+atts 10 28: misclass   7
+atts 10 29: misclass  33
+atts 10 30: misclass  23
+atts 11 12: misclass  14
+atts 11 13: misclass  12
+atts 11 14: misclass   5
+atts 11 15: misclass  12
+atts 11 16: misclass  12
+atts 11 17: misclass  12
+atts 11 18: misclass  12
+atts 11 19: misclass  12
+atts 11 20: misclass  13
+atts 11 21: misclass   7
+atts 11 22: misclass  21
+atts 11 23: misclass   8
+atts 11 24: misclass   8
+atts 11 25: misclass   9
+atts 11 26: misclass  16
+atts 11 27: misclass   7
+atts 11 28: misclass   6
+atts 11 29: misclass  13
+atts 11 30: misclass  15
+atts 12 13: misclass  14
+atts 12 14: misclass   9
+atts 12 15: misclass  69
+atts 12 16: misclass  30
+atts 12 17: misclass  30
+atts 12 18: misclass  25
+atts 12 19: misclass  69
+atts 12 20: misclass  34
+atts 12 21: misclass   7
+atts 12 22: misclass  32
+atts 12 23: misclass   7
+atts 12 24: misclass   8
+atts 12 25: misclass  24
+atts 12 26: misclass  21
+atts 12 27: misclass  19
+atts 12 28: misclass   8
+atts 12 29: misclass  39
+atts 12 30: misclass  33
+atts 13 14: misclass   6
+atts 13 15: misclass  10
+atts 13 16: misclass  10
+atts 13 17: misclass  10
+atts 13 18: misclass  10
+atts 13 19: misclass  15
+atts 13 20: misclass  12
+atts 13 21: misclass   6
+atts 13 22: misclass  23
+atts 13 23: misclass   8
+atts 13 24: misclass   8
+atts 13 25: misclass  12
+atts 13 26: misclass  16
+atts 13 27: misclass  12
+atts 13 28: misclass   8
+atts 13 29: misclass  12
+atts 13 30: misclass  15
+atts 14 15: misclass   7
+atts 14 16: misclass   7
+atts 14 17: misclass   7
+atts 14 18: misclass   7
+atts 14 19: misclass   6
+atts 14 20: misclass   6
+atts 14 21: misclass   9
+atts 14 22: misclass  21
+atts 14 23: misclass   8
+atts 14 24: misclass   8
+atts 14 25: misclass   9
+atts 14 26: misclass   8
+atts 14 27: misclass   8
+atts 14 28: misclass   5
+atts 14 29: misclass   8
+atts 14 30: misclass   8
+atts 15 16: misclass  31
+atts 15 17: misclass  37
+atts 15 18: misclass  29
+atts 15 19: misclass  67
+atts 15 20: misclass  38
+atts 15 21: misclass   8
+atts 15 22: misclass  32
+atts 15 23: misclass   6
+atts 15 24: misclass   8
+atts 15 25: misclass  18
+atts 15 26: misclass  22
+atts 15 27: misclass  18
+atts 15 28: misclass   9
+atts 15 29: misclass  31
+atts 15 30: misclass  30
+atts 16 17: misclass  28
+atts 16 18: misclass  22
+atts 16 19: misclass  31
+atts 16 20: misclass  33
+atts 16 21: misclass   8
+atts 16 22: misclass  35
+atts 16 23: misclass   8
+atts 16 24: misclass   8
+atts 16 25: misclass  25
+atts 16 26: misclass  20
+atts 16 27: misclass  15
+atts 16 28: misclass   8
+atts 16 29: misclass  29
+atts 16 30: misclass  25
+atts 17 18: misclass  24
+atts 17 19: misclass  27
+atts 17 20: misclass  27
+atts 17 21: misclass  11
+atts 17 22: misclass  34
+atts 17 23: misclass   8
+atts 17 24: misclass  10
+atts 17 25: misclass  22
+atts 17 26: misclass  20
+atts 17 27: misclass  17
+atts 17 28: misclass   9
+atts 17 29: misclass  28
+atts 17 30: misclass  26
+atts 18 19: misclass  19
+atts 18 20: misclass  19
+atts 18 21: misclass   6
+atts 18 22: misclass  28
+atts 18 23: misclass   7
+atts 18 24: misclass   7
+atts 18 25: misclass  15
+atts 18 26: misclass  20
+atts 18 27: misclass  18
+atts 18 28: misclass   9
+atts 18 29: misclass  22
+atts 18 30: misclass  23
+atts 19 20: misclass  33
+atts 19 21: misclass   8
+atts 19 22: misclass  33
+atts 19 23: misclass   9
+atts 19 24: misclass   8
+atts 19 25: misclass  27
+atts 19 26: misclass  22
+atts 19 27: misclass  18
+atts 19 28: misclass   9
+atts 19 29: misclass  33
+atts 19 30: misclass  32
+atts 20 21: misclass  10
+atts 20 22: misclass  33
+atts 20 23: misclass   8
+atts 20 24: misclass  10
+atts 20 25: misclass  28
+atts 20 26: misclass  19
+atts 20 27: misclass  18
+atts 20 28: misclass   7
+atts 20 29: misclass  34
+atts 20 30: misclass  29
+atts 21 22: misclass   9
+atts 21 23: misclass   9
+atts 21 24: misclass  10
+atts 21 25: misclass   5
+atts 21 26: misclass   8
+atts 21 27: misclass   7
+atts 21 28: misclass   7
+atts 21 29: misclass   7
+atts 21 30: misclass   7
+atts 22 23: misclass   9
+atts 22 24: misclass  10
+atts 22 25: misclass  24
+atts 22 26: misclass  23
+atts 22 27: misclass  18
+atts 22 28: misclass  11
+atts 22 29: misclass  28
+atts 22 30: misclass  36
+atts 23 24: misclass   9
+atts 23 25: misclass   6
+atts 23 26: misclass   9
+atts 23 27: misclass   9
+atts 23 28: misclass   7
+atts 23 29: misclass   8
+atts 23 30: misclass   7
+atts 24 25: misclass   3
+atts 24 26: misclass   8
+atts 24 27: misclass   8
+atts 24 28: misclass   6
+atts 24 29: misclass   6
+atts 24 30: misclass   7
+atts 25 26: misclass  20
+atts 25 27: misclass  18
+atts 25 28: misclass   9
+atts 25 29: misclass  26
+atts 25 30: misclass  26
+atts 26 27: misclass  19
+atts 26 28: misclass   9
+atts 26 29: misclass  19
+atts 26 30: misclass  19
+atts 27 28: misclass   9
+atts 27 29: misclass  20
+atts 27 30: misclass  15
+atts 28 29: misclass   9
+atts 28 30: misclass   8
+atts 29 30: misclass  30
+The best atts is 24 25, which has a misclass of 3.
+The test function shows that the miss points for the test cases are 6, which exactly agrees with the plot.
+%end project
+diary off
